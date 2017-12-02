@@ -1,0 +1,69 @@
+version: '3'
+services:
+  db:
+    image: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: mysql
+      MYSQL_DATABASE: Syslog 
+      MYSQL_USER: rsyslogdbadmin
+      MYSQL_PASSWORD: rsyslogdbadmin
+    volumes:
+      - ./zz-my.cnf:/etc/mysql/conf.d/zz-my.cnf
+      - ./rsyslog/createDB.sql:/docker-entrypoint-initdb.d/rsyslog.sql
+      - db:/var/lib/mysql
+    restart: unless-stopped
+  
+  rsyslog:
+    build: ./rsyslog
+    image: log/jumanjiman/rsyslog
+    depends_on:
+      - db 
+    ports:
+      - "514:514/tcp"
+      - "514:514/udp"
+    volumes:
+      - rsyslog:/var/run/rsyslog/dev
+      - ./rsyslog/ilogtail.conf:/etc/rsyslog.d/ilogtail.conf
+      - ./rsyslog/local.conf:/etc/rsyslog.d/local.conf
+      - ./rsyslog/ommysql.conf:/etc/rsyslog.d/ommysql.conf
+      - /srv/logs:/logs
+    labels:
+      - "logspout.exclude=true"
+    networks:
+      - default
+      - test
+    restart: unless-stopped
+
+  loganalyzer:
+    build: ./loganalyzer
+    image: log/loganalyzer
+    ports:
+      - 10007:80
+    depends_on:
+      - db
+    volumes:
+      - ./loganalyzer/config.php:/var/www/html/config.php
+      - rsyslog:/var/run/rsyslog/dev
+    labels:
+      - "logspout.exclude=true"
+    restart: unless-stopped
+
+  logspout:
+    image: gliderlabs/logspout:latest
+    environment:
+      EXCLUDE_LABEL: logspout.exclude
+    depends_on:
+      - rsyslog
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command:
+      syslog://rsyslog:514
+    restart: unless-stopped
+
+networks:
+  test:
+    external: true
+
+volumes:
+  rsyslog:
+  db:
